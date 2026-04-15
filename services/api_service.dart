@@ -105,11 +105,13 @@ class ApiService with ChangeNotifier {
   /// Headers for POST/DELETE requests that send a JSON body.
   Map<String, String> get _authHeaders => {
     'Content-Type': 'application/json',
+    'X-API-KEY': _apiKey,
     if (_bearerToken != null) 'Authorization': _authValue,
   };
 
   /// Headers for GET requests (no Content-Type needed).
   Map<String, String> get _sessionHeaders => {
+    'X-API-KEY': _apiKey,
     if (_bearerToken != null) 'Authorization': _authValue,
   };
 
@@ -470,6 +472,8 @@ class ApiService with ChangeNotifier {
           'nodeid':     nodeId,
           'action':     action,
           'execute_at': executeAt.toUtc().toIso8601String(),
+          // Backend compatibility: some deployments read `timestamp`.
+          'timestamp':  executeAt.toUtc().toIso8601String(),
         }),
       ).timeout(const Duration(seconds: 12));
 
