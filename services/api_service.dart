@@ -23,8 +23,6 @@ import '../models/reading.dart';
 class ApiService with ChangeNotifier {
   // ── Config ──────────────────────────────────────────────────────────────────
   static const String _base   = 'https://slhlab.pythonanywhere.com';
-  static const String _apiKey = 'Chutiya@123';
-
   String get base => _base;
 
   // ── State ───────────────────────────────────────────────────────────────────
@@ -63,8 +61,10 @@ class ApiService with ChangeNotifier {
     _ratePerUnit  = _prefs!.getDouble('ratePerUnit') ?? 10.0;
     _bearerToken  = _prefs!.getString('bearer_token'); // persisted across restarts
     await _loadDisplayNames();
-    startPolling(const Duration(seconds: 5));
-    unawaited(_bootstrap());
+    if (isLoggedIn) {
+      startPolling(const Duration(seconds: 5));
+      unawaited(_bootstrap());
+    }
   }
 
   void startPolling(Duration interval) {
@@ -84,13 +84,22 @@ class ApiService with ChangeNotifier {
     _bearerToken = token;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString('bearer_token', token);
+    startPolling(const Duration(seconds: 5));
+    unawaited(_bootstrap());
+    notifyListeners();
   }
 
   /// Called on sign-out — clears token from memory and storage.
   Future<void> clearSession() async {
     _bearerToken = null;
+    stopPolling();
+    latest.clear();
+    nodeHistory.clear();
+    serverSchedules.clear();
+    userAddedNodes.clear();
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.remove('bearer_token');
+    notifyListeners();
   }
 
   // Keep old name for compatibility with SplashGate which checks session_cookie key
@@ -112,6 +121,8 @@ class ApiService with ChangeNotifier {
   Map<String, String> get _sessionHeaders => {
     if (_bearerToken != null) 'Authorization': _authValue,
   };
+
+  bool get _hasValidToken => _bearerToken != null && _bearerToken!.isNotEmpty;
 
   // ── Rate per unit ────────────────────────────────────────────────────────────
   Future<void> setRatePerUnit(double rate) async {
@@ -332,6 +343,7 @@ class ApiService with ChangeNotifier {
   /// GET /api/pzem/latest/<nodeId>/
   /// Mirrors: const LATEST = node => `${API_BASE}/api/pzem/latest/${node}/`;
   Future<Reading?> fetchLatest(String nodeId) async {
+    if (!_hasValidToken) return null;
     try {
       final res = await http
           .get(Uri.parse('$_base/api/pzem/latest/$nodeId/'), headers: _sessionHeaders)
@@ -360,11 +372,13 @@ class ApiService with ChangeNotifier {
   }
 
   Future<void> fetchLatestAll() async {
+    if (!_hasValidToken) return;
     await Future.wait(getKnownNodes().map(fetchLatest));
   }
 
   /// GET /api/pzem/control/<nodeId>/
   Future<Map<String, dynamic>?> _fetchControl(String nodeId) async {
+    if (!_hasValidToken) return null;
     try {
       final res = await http
           .get(Uri.parse('$_base/api/pzem/control/$nodeId/'),
@@ -382,6 +396,7 @@ class ApiService with ChangeNotifier {
   /// GET /api/pzemreadings/?nodeid=<nodeId>
   /// Mirrors: const url = `${READINGS()}?nodeid=${encodeURIComponent(selectedNode)}`;
   Future<List<Reading>> fetchNodeHistory(String nodeId) async {
+    if (!_hasValidToken) return nodeHistory[nodeId] ?? [];
     // Race-condition guard: skip if already fetching this node
     if (_fetchingNodeHistory.contains(nodeId)) {
       return nodeHistory[nodeId] ?? [];
@@ -425,6 +440,7 @@ class ApiService with ChangeNotifier {
   /// POST /api/pzem/control/<nodeId>/  body: {relay: "ON"/"OFF"}
   /// Mirrors: postRelay(node, relay) in web dashboard.
   Future<bool> controlNode(String nodeId, String desiredRelay) async {
+    if (!_hasValidToken) return false;
     try {
       final res = await http.post(
         Uri.parse('$_base/api/pzem/control/$nodeId/'),
@@ -457,6 +473,7 @@ class ApiService with ChangeNotifier {
     required String   action,       // "ON" or "OFF"
     required DateTime executeAt,
   }) async {
+    if (!_hasValidToken) return null;
     // Dedup key — prevents double-tap race condition
     final key = '$nodeId-$action-${executeAt.toIso8601String()}';
     if (_pendingSchedulePosts.contains(key)) return null;
@@ -488,6 +505,7 @@ class ApiService with ChangeNotifier {
   /// GET /api/pzem/schedules/?nodeid=<nodeId>
   /// Fetches all schedules (all statuses) for all known nodes.
   Future<void> fetchServerSchedules({String? nodeId}) async {
+    if (!_hasValidToken) return;
     try {
       final uri = nodeId != null
           ? Uri.parse('$_base/api/pzem/schedules/?nodeid=$nodeId')
@@ -510,6 +528,7 @@ class ApiService with ChangeNotifier {
   /// DELETE /api/pzem/schedules/<id>/
   /// Returns null on success, error string on failure.
   Future<String?> cancelSchedule(int scheduleId) async {
+    if (!_hasValidToken) return 'Not authenticated';
     try {
       final res = await http.delete(
         Uri.parse('$_base/api/pzem/schedules/$scheduleId/'),
@@ -543,6 +562,7 @@ class ApiService with ChangeNotifier {
   /// Discover nodes from the control/schedules API, then load all data.
   /// Avoids hardcoding any node IDs.
   Future<void> _bootstrap() async {
+    if (!_hasValidToken) return;
     // 1. Fetch schedules first — they contain nodeids of all monitored nodes.
     await fetchServerSchedules();
     // Collect node IDs found in schedules
@@ -559,6 +579,7 @@ class ApiService with ChangeNotifier {
   /// Hits /api/pzemreadings/?format=json with a small limit to discover node IDs
   /// without downloading the entire history.
   Future<void> _discoverNodesFromReadings() async {
+    if (!_hasValidToken) return;
     try {
       // Fetch a small slice — enough to discover all active node IDs
       final res = await http
