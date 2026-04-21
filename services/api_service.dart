@@ -330,10 +330,10 @@ class ApiService with ChangeNotifier {
   String lastSeenLabel(String nodeId) {
     if (latest[nodeId] == null) return 'Never';
     final age = readingAge(nodeId);
-    if (age.inSeconds < 60)  return '\${age.inSeconds}s ago';
-    if (age.inMinutes < 60)  return '\${age.inMinutes}m ago';
-    if (age.inHours   < 24)  return '\${age.inHours}h ago';
-    return '\${age.inDays}d ago';
+    if (age.inSeconds < 60)  return '${age.inSeconds}s ago';
+    if (age.inMinutes < 60)  return '${age.inMinutes}m ago';
+    if (age.inHours   < 24)  return '${age.inHours}h ago';
+    return '${age.inDays}d ago';
   }
 
   // ── Latest fetch ─────────────────────────────────────────────────────────────

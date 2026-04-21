@@ -511,7 +511,7 @@ class _DeviceCardState extends State<_DeviceCard> {
     final statusColor = isOnline
         ? const Color(0xFF22C55E)
         : (isStale ? const Color(0xFFF59E0B) : Colors.grey);
-    final statusText = isOnline ? 'Online' : (isStale ? 'Stale (${widget.lastSeen})' : 'Offline');
+    final statusText = isOnline ? 'Online' : (isStale ? 'Stale' : 'Offline');
 
     return GestureDetector(
       onTap: widget.onTap,
