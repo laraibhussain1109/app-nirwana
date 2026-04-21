@@ -503,10 +503,15 @@ class _DeviceCardState extends State<_DeviceCard> {
   Widget build(BuildContext context) {
     final reading  = widget.reading;
     final isOn     = _localOn ?? false;
-    // isOnline: relay ON *and* last update within 15 min (from ApiService.isNodeOnline)
+    // isOnline: relay ON *and* last update within 5 min (from ApiService.isNodeOnline)
     final isOnline = widget.isOnline;
+    final isStale  = isOn && !isOnline;
     final hc       = _healthColor();
     final border   = widget.dark ? Colors.white : Colors.black;
+    final statusColor = isOnline
+        ? const Color(0xFF22C55E)
+        : (isStale ? const Color(0xFFF59E0B) : Colors.grey);
+    final statusText = isOnline ? 'Online' : (isStale ? 'Stale (${widget.lastSeen})' : 'Offline');
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -550,11 +555,11 @@ class _DeviceCardState extends State<_DeviceCard> {
             Container(width: 6, height: 6,
                 decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isOn ? const Color(0xFF22C55E) : Colors.grey.withOpacity(0.5))),
+                    color: statusColor.withOpacity(0.9))),
             const SizedBox(width: 4),
-            Text(isOn ? 'Online' : 'Offline',
+            Text(statusText,
                 style: TextStyle(
-                    color: isOn ? const Color(0xFF22C55E) : Colors.grey,
+                    color: statusColor,
                     fontSize: 10)),
           ]),
           const SizedBox(height: 6),
