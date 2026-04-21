@@ -105,11 +105,13 @@ class ApiService with ChangeNotifier {
   /// Headers for POST/DELETE requests that send a JSON body.
   Map<String, String> get _authHeaders => {
     'Content-Type': 'application/json',
+    'X-API-KEY': _apiKey,
     if (_bearerToken != null) 'Authorization': _authValue,
   };
 
   /// Headers for GET requests (no Content-Type needed).
   Map<String, String> get _sessionHeaders => {
+    'X-API-KEY': _apiKey,
     if (_bearerToken != null) 'Authorization': _authValue,
   };
 
@@ -304,28 +306,34 @@ class ApiService with ChangeNotifier {
   // ── Online status ─────────────────────────────────────────────────────────
   /// A node is "online" only when:
   ///   1. relay == "ON", AND
-  ///   2. last reading received within the past 15 minutes.
-  /// If the reading is stale (>15 min old) the device is considered offline
+  ///   2. last reading received within the past 5 minutes.
+  /// If the reading is stale (>5 min old) the device is considered offline
   /// regardless of relay state.
-  static const Duration _staleThreshold = Duration(minutes: 15);
+  static const Duration _staleThreshold = Duration(minutes: 5);
+
+  Duration readingAge(String nodeId) {
+    final r = latest[nodeId];
+    if (r == null) return const Duration(days: 3650);
+    // Use UTC + absolute difference so timezone-labelled or naive server
+    // timestamps do not incorrectly look "fresh" when they are actually stale.
+    return DateTime.now().toUtc().difference(r.created.toUtc()).abs();
+  }
 
   bool isNodeOnline(String nodeId) {
     final r = latest[nodeId];
     if (r == null) return false;
     if (r.relay.toUpperCase() != 'ON') return false;
-    final age = DateTime.now().difference(r.created);
-    return age <= _staleThreshold;
+    return readingAge(nodeId) <= _staleThreshold;
   }
 
   /// Returns a human-readable staleness string, e.g. "2 min ago", "3 h ago".
   String lastSeenLabel(String nodeId) {
-    final r = latest[nodeId];
-    if (r == null) return 'Never';
-    final age = DateTime.now().difference(r.created).abs();
-    if (age.inSeconds < 60)  return '\${age.inSeconds}s ago';
-    if (age.inMinutes < 60)  return '\${age.inMinutes}m ago';
-    if (age.inHours   < 24)  return '\${age.inHours}h ago';
-    return '\${age.inDays}d ago';
+    if (latest[nodeId] == null) return 'Never';
+    final age = readingAge(nodeId);
+    if (age.inSeconds < 60)  return '${age.inSeconds}s ago';
+    if (age.inMinutes < 60)  return '${age.inMinutes}m ago';
+    if (age.inHours   < 24)  return '${age.inHours}h ago';
+    return '${age.inDays}d ago';
   }
 
   // ── Latest fetch ─────────────────────────────────────────────────────────────

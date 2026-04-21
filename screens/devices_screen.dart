@@ -81,7 +81,7 @@ class _DeviceListTileState extends State<_DeviceListTile> {
     final r = widget.reading;
     if (r == null) return false;
     if (r.relay.toUpperCase() != 'ON') return false;
-    return DateTime.now().difference(r.created).inMinutes <= 15;
+    return DateTime.now().toUtc().difference(r.created.toUtc()).abs().inMinutes <= 5;
   }
 
   Future<void> _toggle(bool v) async {
