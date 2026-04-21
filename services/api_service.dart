@@ -105,11 +105,13 @@ class ApiService with ChangeNotifier {
   /// Headers for POST/DELETE requests that send a JSON body.
   Map<String, String> get _authHeaders => {
     'Content-Type': 'application/json',
+    'X-API-KEY': _apiKey,
     if (_bearerToken != null) 'Authorization': _authValue,
   };
 
   /// Headers for GET requests (no Content-Type needed).
   Map<String, String> get _sessionHeaders => {
+    'X-API-KEY': _apiKey,
     if (_bearerToken != null) 'Authorization': _authValue,
   };
 
