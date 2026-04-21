@@ -63,6 +63,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final api     = Provider.of<ApiService>(context);
     final reading = api.latest[_nodeId];
     final isOn    = reading?.relay.toUpperCase() == 'ON';
+    final isOnline = api.isNodeOnline(_nodeId);
+    final isStale = isOn && !isOnline;
+    final statusColor = isOnline
+        ? const Color(0xFF22C55E)
+        : (isStale ? const Color(0xFFF59E0B) : t.textSec);
+    final statusText = isOnline ? 'Online' : (isStale ? 'Stale' : 'Offline');
     final health  = reading?.health ?? 0;
     final name    = api.getDisplayName(_nodeId);
     final wh      = _windowedHistory;
@@ -79,20 +85,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(width: 12),
                     Expanded(child: Text(name, style: TextStyle(
                         color: t.textPrim, fontSize: 18, fontWeight: FontWeight.w800))),
-                    // Online/Offline
+                    // Online/Offline/Stale
                     Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                            color: isOn ? t.accent.withOpacity(0.1) : t.chipFill,
+                            color: statusColor.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: isOn ? t.accent.withOpacity(0.35) : t.cardBorder)),
+                            border: Border.all(color: statusColor.withOpacity(0.35))),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Container(width: 7, height: 7,
                               decoration: BoxDecoration(shape: BoxShape.circle,
-                                  color: isOn ? t.accent : t.textSec)),
+                                  color: statusColor)),
                           const SizedBox(width: 5),
-                          Text(isOn ? 'Online' : 'Offline',
-                              style: TextStyle(color: isOn ? t.accent : t.textSec,
+                          Text(statusText,
+                              style: TextStyle(color: statusColor,
                                   fontSize: 12, fontWeight: FontWeight.w600)),
                         ])),
                     const SizedBox(width: 8),
@@ -127,6 +133,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Text(reading != null ? '${reading.power.toStringAsFixed(2)} W' : '— W',
                                 style: TextStyle(color: t.textPrim, fontSize: 26, fontWeight: FontWeight.w900)),
                             Text('Current Power Draw', style: TextStyle(color: t.textSec, fontSize: 13)),
+                            const SizedBox(height: 6),
+                            Row(mainAxisSize: MainAxisSize.min, children: [
+                              Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: statusColor)),
+                              const SizedBox(width: 5),
+                              Text(statusText,
+                                  style: TextStyle(
+                                      color: statusColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600)),
+                            ]),
                           ])),
                           SizedBox(width: 64, height: 64,
                               child: PowerDonut(health: health)),
