@@ -478,6 +478,8 @@ class ApiService with ChangeNotifier {
           'nodeid':     nodeId,
           'action':     action,
           'execute_at': executeAt.toUtc().toIso8601String(),
+          // Backend compatibility: some deployments read `timestamp`.
+          'timestamp':  executeAt.toUtc().toIso8601String(),
         }),
       ).timeout(const Duration(seconds: 12));
 

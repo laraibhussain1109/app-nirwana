@@ -26,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen>
   late Animation<double>   _fadeAnim;
 
   static const _base = 'https://slhlab.pythonanywhere.com';
+  static const _apiKey = 'Chutiya@123';
 
   bool  get _dark    => Theme.of(context).brightness == Brightness.dark;
   Color get _accent  => Theme.of(context).colorScheme.primary;
@@ -57,7 +58,10 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       final res = await http.post(
         Uri.parse('$_base/api/login/'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': _apiKey,
+        },
         body: jsonEncode({'username': _userCtrl.text.trim(), 'password': _passCtrl.text}),
       ).timeout(const Duration(seconds: 12));
 
