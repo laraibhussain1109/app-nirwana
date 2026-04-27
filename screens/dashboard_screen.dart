@@ -24,6 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Reading> _history = [];
 
   bool _relayLoading = false;
+  bool _reportDownloading = false;
 
   String get _nodeId {
     if (widget.nodeId != null && widget.nodeId!.isNotEmpty) return widget.nodeId!;
@@ -232,7 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                     // Actions
                     Row(children: [
-                      Expanded(child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, _downloadUsageReport)),
+                      Expanded(child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, _reportDownloading ? null : _downloadUsageReport, loading: _reportDownloading)),
                       const SizedBox(width: 12),
                       Expanded(child: _actionBtn(Icons.schedule_rounded, 'Schedule', true, t,
                               () => showScheduleDialog(context, _nodeId))),
@@ -330,14 +331,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       weeklyRunHours: weekly,
     );
 
-    final bytes = buildMonthlyUsagePdf(report);
-    final fileName = 'usage_report_${_nodeId.toLowerCase()}_${now.year}_${now.month.toString().padLeft(2, '0')}.pdf';
-    downloadBytes(bytes, fileName);
+    setState(() => _reportDownloading = true);
+    try {
+      final bytes = buildMonthlyUsagePdf(report);
+      final fileName = 'usage_report_${_nodeId.toLowerCase()}_${now.year}_${now.month.toString().padLeft(2, '0')}.pdf';
+      final savedPath = await downloadBytes(bytes, fileName);
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Usage report downloaded: $fileName')),
-    );
+      if (!mounted) return;
+      if (savedPath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Usage report saved: $savedPath')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save report. Please check storage permissions.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _reportDownloading = false);
+    }
   }
 
   String _monthName(int month) {
@@ -413,18 +425,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 fontSize: 12, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
           ])));
 
-  Widget _actionBtn(IconData icon, String label, bool primary, AppTheme t, VoidCallback onTap) =>
-      GestureDetector(onTap: onTap,
-          child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              decoration: BoxDecoration(
-                  color: primary ? t.accent.withOpacity(0.1) : t.chipFill,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: primary ? t.accent.withOpacity(0.3) : t.cardBorder)),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(icon, color: primary ? t.accent : t.iconSec, size: 18),
-                const SizedBox(width: 8),
-                Text(label, style: TextStyle(color: primary ? t.accent : t.iconSec,
-                    fontSize: 13, fontWeight: FontWeight.w600)),
-              ])));
+  Widget _actionBtn(
+    IconData icon,
+    String label,
+    bool primary,
+    AppTheme t,
+    VoidCallback? onTap, {
+    bool loading = false,
+  }) =>
+      GestureDetector(
+          onTap: onTap,
+          child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 120),
+              opacity: onTap == null ? 0.7 : 1.0,
+              child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                      color: primary ? t.accent.withOpacity(0.1) : t.chipFill,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: primary ? t.accent.withOpacity(0.3) : t.cardBorder)),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    if (loading)
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: primary ? t.accent : t.iconSec),
+                      )
+                    else
+                      Icon(icon, color: primary ? t.accent : t.iconSec, size: 18),
+                    const SizedBox(width: 8),
+                    Text(loading ? 'Generating...' : label,
+                        style: TextStyle(color: primary ? t.accent : t.iconSec,
+                            fontSize: 13, fontWeight: FontWeight.w600)),
+                  ]))));
 }
