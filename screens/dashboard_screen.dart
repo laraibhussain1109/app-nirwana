@@ -232,7 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                     // Actions
                     Row(children: [
-                      Expanded(child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, _downloadUsageReport))),
+                      Expanded(child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, _downloadUsageReport)),
                       const SizedBox(width: 12),
                       Expanded(child: _actionBtn(Icons.schedule_rounded, 'Schedule', true, t,
                               () => showScheduleDialog(context, _nodeId))),
