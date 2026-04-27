@@ -6,7 +6,8 @@ import '../models/reading.dart';
 import '../widgets/power_charts.dart';
 import '../widgets/schedule_dialog.dart';
 import '../utils/app_theme.dart';
-import '../widgets/nirwana_logo.dart';
+import '../services/file_downloader.dart';
+import '../services/monthly_report_pdf.dart';
 
 class DashboardScreen extends StatefulWidget {
   static const routeName = '/dashboard';
@@ -231,9 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                     // Actions
                     Row(children: [
-                      Expanded(child: ComingSoon(
-                          label: 'Coming Soon',
-                          child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, () {}))),
+                      Expanded(child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, _downloadUsageReport))),
                       const SizedBox(width: 12),
                       Expanded(child: _actionBtn(Icons.schedule_rounded, 'Schedule', true, t,
                               () => showScheduleDialog(context, _nodeId))),
@@ -279,6 +278,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 24),
                   ]))),
             ])));
+  }
+
+
+
+  Future<void> _downloadUsageReport() async {
+    final monthStart = DateTime(DateTime.now().year, DateTime.now().month, 1);
+    final monthly = _history.where((r) => !r.created.isBefore(monthStart)).toList()
+      ..sort((a, b) => a.created.compareTo(b.created));
+
+    if (monthly.length < 2) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not enough monthly data to generate usage report.')),
+      );
+      return;
+    }
+
+    final api = Provider.of<ApiService>(context, listen: false);
+    final monthlyUsage = ((monthly.last.energy - monthly.first.energy).clamp(0.0, double.infinity) as num).toDouble();
+    final totalConsumption = (monthly.last.energy.clamp(0.0, double.infinity) as num).toDouble();
+
+    double runtimeHours = 0;
+    final weekly = <double>[0, 0, 0, 0, 0];
+
+    for (var i = 1; i < monthly.length; i++) {
+      final prev = monthly[i - 1];
+      final curr = monthly[i];
+      var dtHours = curr.created.difference(prev.created).inMinutes / 60.0;
+      if (dtHours < 0) continue;
+      if (dtHours > 1.0) dtHours = 1.0;
+      if (prev.relay.toUpperCase() != 'ON') continue;
+
+      runtimeHours += dtHours;
+      final weekIndex = ((prev.created.day - 1) ~/ 7).clamp(0, weekly.length - 1);
+      weekly[weekIndex] += dtHours;
+    }
+
+    final now = DateTime.now();
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day.toDouble();
+    final predictedUsage = now.day > 0 ? (monthlyUsage / now.day) * daysInMonth : monthlyUsage;
+
+    final report = MonthlyUsageReport(
+      nodeId: _nodeId,
+      deviceName: api.getDisplayName(_nodeId),
+      monthLabel: '${_monthName(now.month)} ${now.year}',
+      monthlyUsageKwh: monthlyUsage,
+      predictedUsageKwh: predictedUsage,
+      totalRunHours: runtimeHours,
+      totalConsumptionKwh: totalConsumption,
+      weeklyRunHours: weekly,
+    );
+
+    final bytes = buildMonthlyUsagePdf(report);
+    final fileName = 'usage_report_${_nodeId.toLowerCase()}_${now.year}_${now.month.toString().padLeft(2, '0')}.pdf';
+    downloadBytes(bytes, fileName);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Usage report downloaded: $fileName')),
+    );
+  }
+
+  String _monthName(int month) {
+    const names = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return names[(month - 1).clamp(0, 11)];
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
