@@ -6,7 +6,8 @@ import '../models/reading.dart';
 import '../widgets/power_charts.dart';
 import '../widgets/schedule_dialog.dart';
 import '../utils/app_theme.dart';
-import '../widgets/nirwana_logo.dart';
+import '../services/file_downloader.dart';
+import '../services/monthly_report_pdf.dart';
 
 class DashboardScreen extends StatefulWidget {
   static const routeName = '/dashboard';
@@ -23,6 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Reading> _history = [];
 
   bool _relayLoading = false;
+  bool _reportDownloading = false;
 
   String get _nodeId {
     if (widget.nodeId != null && widget.nodeId!.isNotEmpty) return widget.nodeId!;
@@ -231,9 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                     // Actions
                     Row(children: [
-                      Expanded(child: ComingSoon(
-                          label: 'Coming Soon',
-                          child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, () {}))),
+                      Expanded(child: _actionBtn(Icons.bar_chart_rounded, 'Usage Report', false, t, _reportDownloading ? null : _downloadUsageReport, loading: _reportDownloading)),
                       const SizedBox(width: 12),
                       Expanded(child: _actionBtn(Icons.schedule_rounded, 'Schedule', true, t,
                               () => showScheduleDialog(context, _nodeId))),
@@ -279,6 +279,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 24),
                   ]))),
             ])));
+  }
+
+
+
+  Future<void> _downloadUsageReport() async {
+    final monthStart = DateTime(DateTime.now().year, DateTime.now().month, 1);
+    final monthly = _history.where((r) => !r.created.isBefore(monthStart)).toList()
+      ..sort((a, b) => a.created.compareTo(b.created));
+
+    if (monthly.length < 2) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not enough monthly data to generate usage report.')),
+      );
+      return;
+    }
+
+    final api = Provider.of<ApiService>(context, listen: false);
+    final monthlyUsage = ((monthly.last.energy - monthly.first.energy).clamp(0.0, double.infinity) as num).toDouble();
+    final totalConsumption = (monthly.last.energy.clamp(0.0, double.infinity) as num).toDouble();
+
+    double runtimeHours = 0;
+    final weekly = <double>[0, 0, 0, 0, 0];
+
+    for (var i = 1; i < monthly.length; i++) {
+      final prev = monthly[i - 1];
+      final curr = monthly[i];
+      var dtHours = curr.created.difference(prev.created).inMinutes / 60.0;
+      if (dtHours < 0) continue;
+      if (dtHours > 1.0) dtHours = 1.0;
+      if (prev.relay.toUpperCase() != 'ON') continue;
+
+      runtimeHours += dtHours;
+      final weekIndex = ((prev.created.day - 1) ~/ 7).clamp(0, weekly.length - 1);
+      weekly[weekIndex] += dtHours;
+    }
+
+    final now = DateTime.now();
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day.toDouble();
+    final predictedUsage = now.day > 0 ? (monthlyUsage / now.day) * daysInMonth : monthlyUsage;
+
+    final report = MonthlyUsageReport(
+      nodeId: _nodeId,
+      deviceName: api.getDisplayName(_nodeId),
+      monthLabel: '${_monthName(now.month)} ${now.year}',
+      monthlyUsageKwh: monthlyUsage,
+      predictedUsageKwh: predictedUsage,
+      totalRunHours: runtimeHours,
+      totalConsumptionKwh: totalConsumption,
+      weeklyRunHours: weekly,
+    );
+
+    setState(() => _reportDownloading = true);
+    try {
+      final bytes = buildMonthlyUsagePdf(report);
+      final fileName = 'usage_report_${_nodeId.toLowerCase()}_${now.year}_${now.month.toString().padLeft(2, '0')}.pdf';
+      final savedPath = await downloadBytes(bytes, fileName);
+
+      if (!mounted) return;
+      if (savedPath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Usage report saved: $savedPath')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save report. Please check storage permissions.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _reportDownloading = false);
+    }
+  }
+
+  String _monthName(int month) {
+    const names = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return names[(month - 1).clamp(0, 11)];
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -346,18 +425,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 fontSize: 12, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
           ])));
 
-  Widget _actionBtn(IconData icon, String label, bool primary, AppTheme t, VoidCallback onTap) =>
-      GestureDetector(onTap: onTap,
-          child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              decoration: BoxDecoration(
-                  color: primary ? t.accent.withOpacity(0.1) : t.chipFill,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: primary ? t.accent.withOpacity(0.3) : t.cardBorder)),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(icon, color: primary ? t.accent : t.iconSec, size: 18),
-                const SizedBox(width: 8),
-                Text(label, style: TextStyle(color: primary ? t.accent : t.iconSec,
-                    fontSize: 13, fontWeight: FontWeight.w600)),
-              ])));
+  Widget _actionBtn(
+    IconData icon,
+    String label,
+    bool primary,
+    AppTheme t,
+    VoidCallback? onTap, {
+    bool loading = false,
+  }) =>
+      GestureDetector(
+          onTap: onTap,
+          child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 120),
+              opacity: onTap == null ? 0.7 : 1.0,
+              child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                      color: primary ? t.accent.withOpacity(0.1) : t.chipFill,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: primary ? t.accent.withOpacity(0.3) : t.cardBorder)),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    if (loading)
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: primary ? t.accent : t.iconSec),
+                      )
+                    else
+                      Icon(icon, color: primary ? t.accent : t.iconSec, size: 18),
+                    const SizedBox(width: 8),
+                    Text(loading ? 'Generating...' : label,
+                        style: TextStyle(color: primary ? t.accent : t.iconSec,
+                            fontSize: 13, fontWeight: FontWeight.w600)),
+                  ]))));
 }
