@@ -32,9 +32,9 @@ Uint8List buildMonthlyUsagePdf(MonthlyUsageReport data) {
     ..writeln('0.10 0.17 0.28 rg 32 740 531 76 re f')
     ..writeln(_text(50, 785, 24, 'NIRWANA USAGE REPORT', r: 0.88, g: 0.96, b: 1.0))
     ..writeln(_text(50, 762, 12, '${data.deviceName} (${data.nodeId})  •  ${data.monthLabel}', r: 0.69, g: 0.86, b: 0.99))
-    ..writeln(_card(40, 625, 250, 102, 'Monthly Usage (kWh)', data.monthlyUsageKwh.toStringAsFixed(2), 'Actual usage this month'))
-    ..writeln(_card(305, 625, 250, 102, 'Predicted Usage (kWh)', data.predictedUsageKwh.toStringAsFixed(2), 'Forecast at month end'))
-    ..writeln(_card(40, 510, 250, 102, 'Total Run Time (Hours)', data.totalRunHours.toStringAsFixed(1), 'Run time in this month'))
+    ..writeln(_card(40, 625, 250, 102, 'Period Usage (kWh)', data.monthlyUsageKwh.toStringAsFixed(2), 'Actual usage in selected period'))
+    ..writeln(_card(305, 625, 250, 102, 'Predicted Usage (kWh)', data.predictedUsageKwh.toStringAsFixed(2), 'Projected for selected period'))
+    ..writeln(_card(40, 510, 250, 102, 'Total Run Time (Hours)', data.totalRunHours.toStringAsFixed(1), 'Runtime in selected period'))
     ..writeln(_card(305, 510, 250, 102, 'Total Consumption (kWh)', data.totalConsumptionKwh.toStringAsFixed(2), 'Lifetime cumulative energy'))
     ..writeln('0.09 0.15 0.24 rg 40 220 515 265 re f')
     ..writeln(_text(55, 465, 16, 'Weekly Device Runtime (Hours)', r: 0.78, g: 0.91, b: 1.0));
