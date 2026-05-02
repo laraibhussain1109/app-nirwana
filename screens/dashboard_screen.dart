@@ -25,6 +25,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   bool _relayLoading = false;
   bool _reportDownloading = false;
+  String _runtimePeriod = 'daily';
+  String _reportPeriod = 'monthly';
 
   String get _nodeId {
     if (widget.nodeId != null && widget.nodeId!.isNotEmpty) return widget.nodeId!;
@@ -57,6 +59,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_windowHours == 0) return _history;
     final cutoff = DateTime.now().subtract(Duration(hours: _windowHours));
     return _history.where((r) => r.created.isAfter(cutoff)).toList();
+  }
+
+  DateTime _periodStart(String period, DateTime now) {
+    switch (period) {
+      case 'daily': return DateTime(now.year, now.month, now.day);
+      case 'weekly': return now.subtract(const Duration(days: 7));
+      case 'monthly': return DateTime(now.year, now.month, 1);
+      case 'quarterly':
+        final qStartMonth = (((now.month - 1) ~/ 3) * 3) + 1;
+        return DateTime(now.year, qStartMonth, 1);
+      case 'half-yearly': return DateTime(now.year, now.month <= 6 ? 1 : 7, 1);
+      case 'annually': return DateTime(now.year, 1, 1);
+      default: return DateTime(now.year, now.month, 1);
+    }
+  }
+
+  double _calculateRuntimeHours(List<Reading> data) {
+    if (data.length < 2) return 0;
+    final sorted = [...data]..sort((a, b) => a.created.compareTo(b.created));
+    double hours = 0;
+    for (var i = 1; i < sorted.length; i++) {
+      final prev = sorted[i - 1];
+      final curr = sorted[i];
+      if (prev.relay.toUpperCase() != 'ON') continue;
+      var dtSeconds = curr.created.difference(prev.created).inSeconds;
+      if (dtSeconds <= 0) continue;
+      if (dtSeconds > 20) dtSeconds = 8;
+      hours += dtSeconds / 3600.0;
+    }
+    return hours;
   }
 
   @override
@@ -239,6 +271,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               () => showScheduleDialog(context, _nodeId))),
                     ]),
                     const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: t.cardDecoration(radius: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Runtime Calculator', style: TextStyle(color: t.textPrim, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _runtimePeriod,
+                                  items: const [
+                                    DropdownMenuItem(value: 'daily', child: Text('Daily')),
+                                    DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
+                                    DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
+                                    DropdownMenuItem(value: 'quarterly', child: Text('Quarterly')),
+                                  ],
+                                  onChanged: (v) => setState(() => _runtimePeriod = v ?? 'daily'),
+                                  decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '${_calculateRuntimeHours(_history.where((r) => !r.created.isBefore(_periodStart(_runtimePeriod, DateTime.now()))).toList()).toStringAsFixed(2)} h',
+                                style: TextStyle(color: t.textPrim, fontWeight: FontWeight.w800, fontSize: 16),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          DropdownButtonFormField<String>(
+                            value: _reportPeriod,
+                            items: const [
+                              DropdownMenuItem(value: 'monthly', child: Text('PDF Period: Monthly')),
+                              DropdownMenuItem(value: 'quarterly', child: Text('PDF Period: Quarterly')),
+                              DropdownMenuItem(value: 'half-yearly', child: Text('PDF Period: Half-Yearly')),
+                              DropdownMenuItem(value: 'annually', child: Text('PDF Period: Annually')),
+                            ],
+                            onChanged: (v) => setState(() => _reportPeriod = v ?? 'monthly'),
+                            decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
 
                     // Power toggle
                     Container(
@@ -284,14 +362,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 
   Future<void> _downloadUsageReport() async {
-    final monthStart = DateTime(DateTime.now().year, DateTime.now().month, 1);
-    final monthly = _history.where((r) => !r.created.isBefore(monthStart)).toList()
+    final now = DateTime.now();
+    final periodStart = _periodStart(_reportPeriod, now);
+    final monthly = _history.where((r) => !r.created.isBefore(periodStart)).toList()
       ..sort((a, b) => a.created.compareTo(b.created));
 
     if (monthly.length < 2) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not enough monthly data to generate usage report.')),
+        const SnackBar(content: Text('Not enough data in selected period to generate usage report.')),
       );
       return;
     }
@@ -306,9 +385,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     for (var i = 1; i < monthly.length; i++) {
       final prev = monthly[i - 1];
       final curr = monthly[i];
-      var dtHours = curr.created.difference(prev.created).inMinutes / 60.0;
+      var dtHours = curr.created.difference(prev.created).inSeconds / 3600.0;
       if (dtHours < 0) continue;
-      if (dtHours > 1.0) dtHours = 1.0;
+      if (dtHours > (20 / 3600.0)) dtHours = (8 / 3600.0);
       if (prev.relay.toUpperCase() != 'ON') continue;
 
       runtimeHours += dtHours;
@@ -316,14 +395,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       weekly[weekIndex] += dtHours;
     }
 
-    final now = DateTime.now();
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day.toDouble();
-    final predictedUsage = now.day > 0 ? (monthlyUsage / now.day) * daysInMonth : monthlyUsage;
+    final predictedUsage = monthlyUsage;
 
     final report = MonthlyUsageReport(
       nodeId: _nodeId,
       deviceName: api.getDisplayName(_nodeId),
-      monthLabel: '${_monthName(now.month)} ${now.year}',
+      monthLabel: _periodLabel(now),
       monthlyUsageKwh: monthlyUsage,
       predictedUsageKwh: predictedUsage,
       totalRunHours: runtimeHours,
@@ -334,7 +411,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _reportDownloading = true);
     try {
       final bytes = buildMonthlyUsagePdf(report);
-      final fileName = 'usage_report_${_nodeId.toLowerCase()}_${now.year}_${now.month.toString().padLeft(2, '0')}.pdf';
+      final fileName = 'usage_report_${_nodeId.toLowerCase()}_${_reportPeriod}_${now.year}_${now.month.toString().padLeft(2, '0')}.pdf';
       final savedPath = await downloadBytes(bytes, fileName);
 
       if (!mounted) return;
@@ -358,6 +435,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     return names[(month - 1).clamp(0, 11)];
+  }
+
+  String _periodLabel(DateTime now) {
+    switch (_reportPeriod) {
+      case 'quarterly':
+        final q = ((now.month - 1) ~/ 3) + 1;
+        return 'Q$q ${now.year}';
+      case 'half-yearly':
+        return '${now.month <= 6 ? 'H1' : 'H2'} ${now.year}';
+      case 'annually':
+        return '${now.year}';
+      case 'monthly':
+      default:
+        return '${_monthName(now.month)} ${now.year}';
+    }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
